@@ -1,180 +1,129 @@
-import { Footer } from '@/components';
-import { listChartByPageUsingPost } from '@/services/yubi/chartController';
-import { getLoginUserUsingGet, userLoginUsingPost } from '@/services/yubi/userController';
-import { LockOutlined, UserOutlined } from '@ant-design/icons';
-import { LoginForm, ProFormText } from '@ant-design/pro-components';
-import { Helmet, Link, history, useModel } from '@umijs/max';
-import { Tabs, message } from 'antd';
-import { createStyles } from 'antd-style';
-import React, { useEffect, useState } from 'react';
-import { flushSync } from 'react-dom';
-import Settings from '../../../../config/defaultSettings';
+import {genChartByAiUsingPost} from '@/services/yubi/chartController';
+import { UploadOutlined } from '@ant-design/icons';
+import {Form, Select, Upload, message, Button, Space, Input, Row, Col, Card, Divider, Spin} from 'antd';
+import TextArea from "antd/es/input/TextArea";
+import React, { useState } from 'react';
+import ReactECharts from 'echarts-for-react';
 
-const useStyles = createStyles(({ token }) => {
-  return {
-    action: {
-      marginLeft: '8px',
-      color: 'rgba(0, 0, 0, 0.2)',
-      fontSize: '24px',
-      verticalAlign: 'middle',
-      cursor: 'pointer',
-      transition: 'color 0.3s',
-      '&:hover': {
-        color: token.colorPrimaryActive,
-      },
-    },
-    lang: {
-      width: 42,
-      height: 42,
-      lineHeight: '42px',
-      position: 'fixed',
-      right: 16,
-      borderRadius: token.borderRadius,
-      ':hover': {
-        backgroundColor: token.colorBgTextHover,
-      },
-    },
-    container: {
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      overflow: 'auto',
-      backgroundImage:
-        "url('https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/V-_oS6r-i7wAAAAAAAAAAAAAFl94AQBr')",
-      backgroundSize: '100% 100%',
-    },
-  };
-});
 
-const Login: React.FC = () => {
-  const [userLoginState, setUserLoginState] = useState<API.LoginResult>({});
-  const [type, setType] = useState<string>('account');
-  const { initialState, setInitialState } = useModel('@@initialState');
-  const { styles } = useStyles();
+/**
+ * 添加图表页面
+ * @constructor
+ */
+const AddChart: React.FC = () => {
+
+  const [chart, setChart] = useState<API.BiResponse>();
+  const [option, setOption] = useState<any>()
+  const [submitting, setSubmitting] = useState<boolean>(false);
+
 
   /**
-   * 登录成功后，获取用户信息
+   * 提交
+   * @param values
    */
-  const fetchUserInfo = async () => {
-    const userInfo = await getLoginUserUsingGet();
-    if (userInfo) {
-      flushSync(() => {
-        setInitialState((s) => ({
-          ...s,
-          currentUser: userInfo,
-        }));
-      });
+  const onFinish = async (values: any) => {
+    // 避免重复提交
+    if (submitting) {
+      return;
     }
-  };
-
-  useEffect(() => {
-    listChartByPageUsingPost({}).then((res) => {
-      console.error('res', res);
-    });
-  });
-  const handleSubmit = async (values: API.UserLoginRequest) => {
+    setSubmitting(true);
+    setChart(undefined);
+    setOption(undefined);
+    // todo 对接后端，上传数据
+    const parms = {
+      ...values,
+      file: undefined
+    }
     try {
-      // 登录
-      const res = await userLoginUsingPost(values);
-      if (res.code === 0) {
-        const defaultLoginSuccessMessage = '登录成功！';
-        message.success(defaultLoginSuccessMessage);
-        await fetchUserInfo();
-        const urlParams = new URL(window.location.href).searchParams;
-        history.push(urlParams.get('redirect') || '/');
-        return;
+      const res = await genChartByAiUsingPost(parms, {}, values.file.file.originFileObj)
+      console.log(res);
+      if (!res?.data){
+        message.error('分析失败');
       } else {
-        message.error(res.message);
+        message.success('分析成功');
+        const chartOption = JSON.parse(res.data.genChart ?? '');
+        if (!chartOption) {
+          throw new Error('图表代码解析错误')
+        } else {
+          setChart(res.data);
+          setOption(chartOption);
+        }
       }
-    } catch (error) {
-      const defaultLoginFailureMessage = '登录失败，请重试！';
-      console.log(error);
-      message.error(defaultLoginFailureMessage);
+    } catch (e: any) {
+      message.error('分析失败' + e.message);
     }
+    setSubmitting(false);
   };
 
   return (
-    <div className={styles.container}>
-      <Helmet>
-        <title>
-          {'登录'}- {Settings.title}
-        </title>
-      </Helmet>
+    <div className="add-chart">
+      <Row gutter={24}>
+        <Col span={12}>
+          <Card title="智能分析">
+            <Form
+              name="addChart"
+              labelAlign="left"
+              labelCol={{ span: 4 }}
+              wrapperCol={{ span: 16 }}
+              onFinish={onFinish}
+              initialValues={{}}
+            >
+              <Form.Item
+                name="goal"
+                label="分析目标"
+                rules={[{ required: true, message: '请输入分析目标' }]}
+              >
+                <TextArea placeholder="请输入你的分析需求，比如：分析网站用户的增长情况" />
+              </Form.Item>
+              <Form.Item name="name" label="图表名称">
+                <Input placeholder="请输入你的图标名称" />
+              </Form.Item>
+              <Form.Item name="select" label="图标类型">
+                <Select
+                  options={[
+                    { value: '折线图', label: '折线图' },
+                    { value: '柱状图', label: '柱状图' },
+                    { value: '堆叠图', label: '堆叠图' },
+                    { value: '饼图', label: '饼图' },
+                    { value: '雷达图', label: '雷达图' },
+                  ]}
+                ></Select>
+              </Form.Item>
+              <Form.Item name="file" label="原始数据">
+                <Upload name="file" maxCount={1}>
+                  <Button icon={<UploadOutlined />}>上传 CSV 文件</Button>
+                </Upload>
+              </Form.Item>
 
-      <div
-        style={{
-          flex: '1',
-          padding: '32px 0',
-        }}
-      >
-        <LoginForm
-          contentStyle={{
-            minWidth: 280,
-            maxWidth: '75vw',
-          }}
-          logo={<img alt="logo" src="/logo.svg" />}
-          title="智能 BI"
-          subTitle={'智能 BI 是 先进的AI驱动智能项目'}
-          onFinish={async (values) => {
-            await handleSubmit(values as API.UserLoginRequest);
-          }}
-        >
-          <Tabs
-            activeKey={type}
-            onChange={setType}
-            centered
-            items={[
-              {
-                key: 'account',
-                label: '账户密码登录',
-              },
-            ]}
-          />
-
-          {type === 'account' && (
-            <>
-              <ProFormText
-                name="userAccount"
-                fieldProps={{
-                  size: 'large',
-                  prefix: <UserOutlined />,
-                }}
-                placeholder={'请输入用户名'}
-                rules={[
-                  {
-                    required: true,
-                    message: '用户名是必填项！',
-                  },
-                ]}
-              />
-              <ProFormText.Password
-                name="userPassword"
-                fieldProps={{
-                  size: 'large',
-                  prefix: <LockOutlined />,
-                }}
-                placeholder={'请输入密码'}
-                rules={[
-                  {
-                    required: true,
-                    message: '密码是必填项！',
-                  },
-                ]}
-              />
-            </>
-          )}
-
-          <div
-            style={{
-              marginBottom: 24,
-            }}
-          >
-            <Link to="user/register">注册</Link>
-          </div>
-        </LoginForm>
-      </div>
-      <Footer />
+              <Form.Item wrapperCol={{ span: 16, offset: 4 }}>
+                <Space>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={submitting}
+                    disabled={submitting}
+                  >
+                    提交
+                  </Button>
+                  <Button htmlType="reset">重置</Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card title="分析结论">
+            {chart?.genResult ?? <div>请先在左侧进行提交</div>}
+            <Spin spinning={submitting}/>
+          </Card>
+          <Divider />
+          <Card title="可视化图表">
+            {option ? <ReactECharts option={option} /> : <div>请先在左侧进行提交</div>}
+            <Spin spinning={submitting}/>
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };
-export default Login;
+export default AddChart;
